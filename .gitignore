@@ -1,0 +1,15 @@
+# build outputs
+demo
+test_c
+test_cpp
+*.exe
+*.o
+*.obj
+*.out
+
+# editor and OS junk
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store

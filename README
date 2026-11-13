@@ -1,0 +1,54 @@
+INDIC(3)                   indic.h manual                   INDIC(3)
+
+NAME
+    indic.h - colors, progress bars and spinners for the terminal
+
+SYNOPSIS
+    #include "indic.h"
+
+    int  indic_init(void);
+    void indic_progress(double frac, int width);
+    void indic_spinner_tick(const char *msg);
+    void indic_spinner_done(const char *msg);
+    void indic_cursor_hide(void);
+    void indic_cursor_show(void);
+
+DESCRIPTION
+    One header file. No dependencies beyond libc and the OS headers.
+    Works on Linux, macOS and Windows (enables ANSI on the console).
+
+    Call indic_init() once at the top of main(). Colors turn off by
+    themselves when output is piped or NO_COLOR is set. The cursor and
+    colors are restored on exit and on Ctrl+C.
+
+    INDIC_PAINT(INDIC_RED, "text") wraps text and always resets.
+    Colors: RED GREEN YELLOW BLUE MAGENTA CYAN WHITE BOLD DIM.
+    These are string literals and always emit escapes; use
+    indic_style(INDIC_RED) with %s if output may be piped.
+
+    indic_progress(0.5, 30) redraws one line, newline at 1.0.
+    A width of 0 fits the terminal.
+
+    Define INDIC_ASCII before including for '#' and '-' bars.
+    Include indic.h before other system headers.
+
+EXAMPLE
+    indic_init();
+    printf(INDIC_PAINT(INDIC_GREEN, "ok\n"));
+    for (i = 0; i <= 100; i++) indic_progress(i / 100.0, 30);
+
+BUILD
+    make          build demo, run tests (C99 and C++)
+    make win      cross-compile .exe with mingw
+    make clean
+
+FILES
+    indic.h           the library
+    examples/demo.c   usage
+    tests/test.c      tests
+
+STATUS
+    Windows build compiles; not yet run on a real Windows console.
+
+LICENSE
+    GNU GPL v3 or later. See LICENSE.
