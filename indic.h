@@ -143,11 +143,38 @@ static inline int indic_term_width(void) {
   #define INDIC__EMPTY "\xE2\x96\x91" /* ░ */
 #endif
 
-static inline char *indic_progress_str(char *buf, double frac, int width) {
-    int i, filled;
-    char *p = buf;
+/*
+ * Return the number of bytes needed for a progress string, including its
+ * trailing NUL.  Returns 0 when width cannot be represented safely.
+ */
+static inline size_t indic_progress_str_size(int width) {
+    const size_t glyph_bytes = sizeof(INDIC__FULL) - 1;
+    size_t bar_width;
+
     if (width < 1) width = 1;
-    if (frac < 0) frac = 0;
+    bar_width = (size_t)width;
+    /* '[' + glyphs + "] 100%" + NUL */
+    if (bar_width > ((size_t)-1 - 8) / glyph_bytes) return 0;
+    return 8 + bar_width * glyph_bytes;
+}
+
+/*
+ * Write a progress string to buf.  buf_size must include space for the NUL.
+ * Returns 0 on success and -1 if buf is invalid or too small.
+ */
+static inline int indic_progress_str(char *buf, size_t buf_size,
+                                     double frac, int width) {
+    int i, filled;
+    char *p;
+    size_t needed;
+
+    if (buf && buf_size) buf[0] = '\0';
+    needed = indic_progress_str_size(width);
+    if (!buf || !needed || buf_size < needed) return -1;
+
+    p = buf;
+    if (width < 1) width = 1;
+    if (frac != frac || frac < 0) frac = 0; /* NaN and negative values */
     if (frac > 1) frac = 1;
     filled = (int)(frac * width + 0.5);
     *p++ = '[';
@@ -157,19 +184,26 @@ static inline char *indic_progress_str(char *buf, double frac, int width) {
         memcpy(p, s, n);
         p += n;
     }
-    sprintf(p, "] %3d%%", (int)(frac * 100 + 0.5));
-    return buf;
+    snprintf(p, buf_size - (size_t)(p - buf), "] %3d%%",
+             (int)(frac * 100 + 0.5));
+    return 0;
 }
 static inline void indic_progress(double frac, int width) {
     char *buf;
+    size_t buf_size;
     if (width <= 0) {
         width = indic_term_width() - 10;
         if (width > 50) width = 50;
         if (width < 10) width = 10;
     }
-    buf = (char *)malloc((size_t)width * 3 + 16);
+    buf_size = indic_progress_str_size(width);
+    if (!buf_size) return;
+    buf = (char *)malloc(buf_size);
     if (!buf) return;
-    indic_progress_str(buf, frac, width);
+    if (indic_progress_str(buf, buf_size, frac, width) != 0) {
+        free(buf);
+        return;
+    }
     if (indic__color_on) {
         printf("\r\033[K%s", buf);
         fflush(stdout);
