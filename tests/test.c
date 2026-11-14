@@ -1,3 +1,4 @@
+#define INDIC_IMPLEMENTATION
 #include "../indic.h"
 #include <assert.h>
 

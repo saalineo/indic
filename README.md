@@ -8,10 +8,13 @@ by `indic_init()`.
 
 ## Usage
 
-Include `indic.h` before other system headers and initialize once near the
-start of `main`:
+Include `indic.h` where it is used. In exactly one translation unit (normally
+`main.c`), define `INDIC_IMPLEMENTATION` before including it; that compilation
+unit owns the shared initialization, color, cursor, and spinner state.
+Initialize once near the start of `main`:
 
 ```c
+#define INDIC_IMPLEMENTATION  /* main.c only */
 #include "indic.h"
 
 int main(void) {
@@ -25,6 +28,22 @@ int main(void) {
     return 0;
 }
 ```
+
+Other source files include the header normally, without the definition:
+
+```c
+/* worker.c */
+#include "indic.h"
+
+void worker(void) {
+    printf("%sworking%s\n", indic_style(INDIC_CYAN), indic_style(INDIC_RESET));
+}
+```
+
+Do not define `INDIC_IMPLEMENTATION` in more than one source file: the linker
+will correctly report duplicate library symbols. Defining it nowhere produces
+undefined-symbol linker errors. This replaces the old header-local `static`
+state, which gave every translation unit a different copy.
 
 Colors are disabled automatically when standard output is not a terminal or
 when `NO_COLOR` is set. The cursor and terminal colors are restored at exit and
@@ -87,6 +106,25 @@ make clean
 ```
 
 See `examples/demo.c` for a complete example and `tests/test.c` for tests.
+
+## Examples
+
+Every public feature also has a small standalone program in `examples/`. Build
+all of them with `make examples`, or build one with, for example,
+`make example-progress`.
+
+| File | Demonstrates |
+| --- | --- |
+| `init.c` | `indic_init()` and ANSI detection |
+| `colors.c` | `INDIC_PAINT` and all supplied style constants |
+| `conditional_style.c` | `indic_style()` for output that is safe to pipe |
+| `terminal_width.c` | `indic_term_width()` |
+| `progress.c` | `indic_progress()` |
+| `progress_string.c` | `indic_progress_str_size()` and `indic_progress_str()` |
+| `spinner_frames.c` | `indic_spinner_frame()` |
+| `spinner.c` | `indic_spinner_tick()` and `indic_spinner_done()` |
+| `cursor.c` | `indic_cursor_hide()` and `indic_cursor_show()` |
+| `ascii_progress.c` | the `INDIC_ASCII` option |
 
 ## License
 

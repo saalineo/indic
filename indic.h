@@ -5,6 +5,7 @@
  * beyond the C standard library and OS terminal headers.
  *
  * Usage:
+ *     #define INDIC_IMPLEMENTATION  (in exactly one .c/.cpp file)
  *     #include "indic.h"
  *     indic_init();                       // once, at start of main()
  *     printf(INDIC_PAINT(INDIC_GREEN, "ok\n"));
@@ -32,11 +33,15 @@
   #endif
   #include <windows.h>
   #include <io.h>
-  #define INDIC_ISATTY(f) _isatty(_fileno(f))
+  #ifndef INDIC_ISATTY
+    #define INDIC_ISATTY(f) _isatty(_fileno(f))
+  #endif
 #else
   #include <unistd.h>
   #include <sys/ioctl.h>
-  #define INDIC_ISATTY(f) isatty(fileno(f))
+  #ifndef INDIC_ISATTY
+    #define INDIC_ISATTY(f) isatty(fileno(f))
+  #endif
 #endif
 
 #ifdef __cplusplus
@@ -56,28 +61,68 @@ extern "C" {
 
 #define INDIC_PAINT(style, text) style text INDIC_RESET
 
-/* Internal state*/
+/* Returns 1 if ANSI output is enabled, 0 otherwise */
+int indic_init(void);
+const char *indic_style(const char *s);
+void indic_cursor_hide(void);
+void indic_cursor_show(void);
+
+// Terminal width
+int indic_term_width(void);
+
+// Progress bar
+#ifdef INDIC_ASCII
+  #define INDIC__FULL  "#"
+  #define INDIC__EMPTY "-"
+#else
+  #define INDIC__FULL  "\xE2\x96\x88" /* █ */
+  #define INDIC__EMPTY "\xE2\x96\x91" /* ░ */
+#endif
+
+/*
+ * Return the number of bytes needed for a progress string, including its
+ * trailing NUL.  Returns 0 when width cannot be represented safely.
+ */
+size_t indic_progress_str_size(int width);
+
+/*
+ * Write a progress string to buf.  buf_size must include space for the NUL.
+ * Returns 0 on success and -1 if buf is invalid or too small.
+ */
+int indic_progress_str(char *buf, size_t buf_size, double frac, int width);
+void indic_progress(double frac, int width);
+
+// Spinner
+char indic_spinner_frame(int tick);
+
+void indic_spinner_tick(const char *msg);
+void indic_spinner_done(const char *msg);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* INDIC_H */
+
+/*
+ * Define INDIC_IMPLEMENTATION in exactly one translation unit before this
+ * header.  That translation unit owns the library state and function bodies.
+ */
+#ifdef INDIC_IMPLEMENTATION
+#ifndef INDIC_IMPLEMENTATION_INCLUDED
+#define INDIC_IMPLEMENTATION_INCLUDED
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Shared library state: it exists once because this block is compiled once. */
 static int indic__color_on = 0;
 static int indic__cursor_hidden = 0;
 static int indic__inited = 0;
+static int indic__spinner_tick = 0;
 
-/*Cursor*/
-static inline void indic_cursor_hide(void) {
-    if (!indic__color_on) return;
-    fputs("\033[?25l", stdout);
-    fflush(stdout);
-    indic__cursor_hidden = 1;
-}
-
-static inline void indic_cursor_show(void) {
-    if (!indic__color_on) return;
-    fputs("\033[?25h", stdout);
-    fflush(stdout);
-    indic__cursor_hidden = 0;
-}
-
-/* Init / cleanup */
-static inline void indic__cleanup(void) {
+static void indic__cleanup(void) {
     if (indic__color_on) {
         if (indic__cursor_hidden) fputs("\033[?25h", stdout);
         fputs(INDIC_RESET, stdout);
@@ -85,21 +130,31 @@ static inline void indic__cleanup(void) {
     }
 }
 
-static inline void indic__on_sigint(int sig) {
+static void indic__on_sigint(int sig) {
     indic__cleanup();
     signal(sig, SIG_DFL);
     raise(sig);
 }
 
-/* Returns 1 if ANSI output is enabled, 0 otherwise */
-static inline int indic_init(void) {
+void indic_cursor_hide(void) {
+    if (!indic__color_on) return;
+    fputs("\033[?25l", stdout);
+    fflush(stdout);
+    indic__cursor_hidden = 1;
+}
+
+void indic_cursor_show(void) {
+    if (!indic__color_on) return;
+    fputs("\033[?25h", stdout);
+    fflush(stdout);
+    indic__cursor_hidden = 0;
+}
+
+int indic_init(void) {
     if (indic__inited) return indic__color_on;
     indic__inited = 1;
 
-    if (!INDIC_ISATTY(stdout) || getenv("NO_COLOR")) {
-        indic__color_on = 0;
-        return 0;
-    }
+    if (!INDIC_ISATTY(stdout) || getenv("NO_COLOR")) return 0;
 #ifdef _WIN32
     {
         HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -116,12 +171,11 @@ static inline int indic_init(void) {
     return 1;
 }
 
-static inline const char *indic_style(const char *s) {
+const char *indic_style(const char *s) {
     return indic__color_on ? s : "";
 }
 
-// Terminal width
-static inline int indic_term_width(void) {
+int indic_term_width(void) {
 #ifdef _WIN32
     CONSOLE_SCREEN_BUFFER_INFO i;
     if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &i))
@@ -134,20 +188,7 @@ static inline int indic_term_width(void) {
     return 80;
 }
 
-// Progress bar
-#ifdef INDIC_ASCII
-  #define INDIC__FULL  "#"
-  #define INDIC__EMPTY "-"
-#else
-  #define INDIC__FULL  "\xE2\x96\x88" /* █ */
-  #define INDIC__EMPTY "\xE2\x96\x91" /* ░ */
-#endif
-
-/*
- * Return the number of bytes needed for a progress string, including its
- * trailing NUL.  Returns 0 when width cannot be represented safely.
- */
-static inline size_t indic_progress_str_size(int width) {
+size_t indic_progress_str_size(int width) {
     const size_t glyph_bytes = sizeof(INDIC__FULL) - 1;
     size_t bar_width;
 
@@ -158,12 +199,7 @@ static inline size_t indic_progress_str_size(int width) {
     return 8 + bar_width * glyph_bytes;
 }
 
-/*
- * Write a progress string to buf.  buf_size must include space for the NUL.
- * Returns 0 on success and -1 if buf is invalid or too small.
- */
-static inline int indic_progress_str(char *buf, size_t buf_size,
-                                     double frac, int width) {
+int indic_progress_str(char *buf, size_t buf_size, double frac, int width) {
     int i, filled;
     char *p;
     size_t needed;
@@ -188,7 +224,8 @@ static inline int indic_progress_str(char *buf, size_t buf_size,
              (int)(frac * 100 + 0.5));
     return 0;
 }
-static inline void indic_progress(double frac, int width) {
+
+void indic_progress(double frac, int width) {
     char *buf;
     size_t buf_size;
     if (width <= 0) {
@@ -208,25 +245,24 @@ static inline void indic_progress(double frac, int width) {
         printf("\r\033[K%s", buf);
         fflush(stdout);
         if (frac >= 1.0) putchar('\n');
-    } else {
-        if (frac >= 1.0) printf("%s\n", buf);
+    } else if (frac >= 1.0) {
+        printf("%s\n", buf);
     }
     free(buf);
 }
 
-// Spinner
-static inline char indic_spinner_frame(int tick) {
+char indic_spinner_frame(int tick) {
     static const char frames[4] = { '|', '/', '-', '\\' };
     return frames[((tick % 4) + 4) % 4];
 }
 
-static inline void indic_spinner_tick(const char *msg) {
-    static int tick = 0;
+void indic_spinner_tick(const char *msg) {
     if (!indic__color_on) return;
-    printf("\r\033[K%c %s", indic_spinner_frame(tick++), msg);
+    printf("\r\033[K%c %s", indic_spinner_frame(indic__spinner_tick++), msg);
     fflush(stdout);
 }
-static inline void indic_spinner_done(const char *msg) {
+
+void indic_spinner_done(const char *msg) {
     if (indic__color_on)
         printf("\r\033[K" INDIC_GREEN "\xE2\x9C\x94" INDIC_RESET " %s\n", msg);
     else
@@ -238,4 +274,5 @@ static inline void indic_spinner_done(const char *msg) {
 }
 #endif
 
-#endif /* INDIC_H */
+#endif /* INDIC_IMPLEMENTATION_INCLUDED */
+#endif /* INDIC_IMPLEMENTATION */
