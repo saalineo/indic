@@ -92,6 +92,34 @@ success and `-1` for an invalid or undersized buffer.
 Define `INDIC_ASCII` before including the header to use `#` and `-` instead of
 Unicode block characters.
 
+### Rich progress updates
+
+For a labelled progress line with elapsed time and an ETA, use:
+
+```c
+indic_progress_update("Downloading", 0.42);
+```
+
+The first update starts the timer.  A completed update prints a newline and
+starts a fresh timer the next time it is called.  Use
+`indic_progress_reset()` to start a fresh timer before completion.
+
+When work cannot be measured, pass `INDIC_PROGRESS_INDETERMINATE` to display
+an animated activity bar without an ETA:
+
+```c
+indic_progress_update("Waiting for server", INDIC_PROGRESS_INDETERMINATE);
+```
+
+Use the `_ex` form to choose the bar width or hide either time field:
+
+```c
+indic_progress_options options = INDIC_PROGRESS_OPTIONS_INIT;
+options.width = 24;
+options.show_eta = 0;
+indic_progress_update_ex("Uploading", 0.42, &options);
+```
+
 ## Terminal configuration
 
 Output defaults to `stdout`. Select another live stream before initialization:

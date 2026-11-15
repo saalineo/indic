@@ -32,6 +32,15 @@ int main(void) {
     assert(indic_progress_str(buf, exact_size, 0.5, 4) == 0);
     assert(indic_progress_str_size(0) == indic_progress_str_size(1));
 
+    /* Rich-progress options have useful defaults and a named indeterminate mode. */
+    {
+        indic_progress_options options = INDIC_PROGRESS_OPTIONS_INIT;
+        assert(options.width == 0);
+        assert(options.show_elapsed == 1);
+        assert(options.show_eta == 1);
+        assert(INDIC_PROGRESS_INDETERMINATE < 0.0);
+    }
+
     /* spinner frames cycle */
     assert(indic_spinner_frame(0) == '|');
     assert(indic_spinner_frame(1) == '/');

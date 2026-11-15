@@ -41,6 +41,7 @@
 #else
   #include <unistd.h>
   #include <sys/ioctl.h>
+  #include <sys/time.h>
   #ifndef INDIC_ISATTY
     #define INDIC_ISATTY(f) isatty(fileno(f))
   #endif
@@ -93,6 +94,23 @@ size_t indic_progress_str_size(int width);
 int indic_progress_str(char *buf, size_t buf_size, double frac, int width);
 void indic_progress(double frac, int width);
 
+/* Pass this as fraction to show activity when the amount of work is unknown. */
+#define INDIC_PROGRESS_INDETERMINATE (-1.0)
+
+/* Options for indic_progress_update_ex().  Width 0 fits the terminal. */
+typedef struct indic_progress_options {
+    int width;
+    int show_elapsed;
+    int show_eta;
+} indic_progress_options;
+
+#define INDIC_PROGRESS_OPTIONS_INIT { 0, 1, 1 }
+
+void indic_progress_update(const char *label, double fraction);
+void indic_progress_update_ex(const char *label, double fraction,
+                              const indic_progress_options *options);
+void indic_progress_reset(void);
+
 // Spinner
 char indic_spinner_frame(int tick);
 
@@ -122,6 +140,9 @@ static volatile sig_atomic_t indic__color_on = 0;
 static volatile sig_atomic_t indic__cursor_hidden = 0;
 static int indic__inited = 0;
 static int indic__spinner_tick = 0;
+static int indic__progress_active = 0;
+static int indic__progress_tick = 0;
+static double indic__progress_started_at = 0.0;
 static FILE *indic__output = NULL;
 #ifndef _WIN32
 static int indic__output_fd = -1;
@@ -129,6 +150,20 @@ static int indic__output_fd = -1;
 
 static FILE *indic__output_stream(void) {
     return indic__output ? indic__output : stdout;
+}
+
+static double indic__now(void) {
+#ifdef _WIN32
+    static LARGE_INTEGER frequency;
+    LARGE_INTEGER counter;
+    if (!frequency.QuadPart) QueryPerformanceFrequency(&frequency);
+    QueryPerformanceCounter(&counter);
+    return frequency.QuadPart ? (double)counter.QuadPart / frequency.QuadPart : 0.0;
+#else
+    struct timeval tv;
+    if (gettimeofday(&tv, NULL) != 0) return 0.0;
+    return (double)tv.tv_sec + (double)tv.tv_usec / 1000000.0;
+#endif
 }
 
 static void indic__cleanup(void) {
@@ -301,6 +336,123 @@ void indic_progress(double frac, int width) {
         fprintf(indic__output_stream(), "%s\n", buf);
     }
     free(buf);
+}
+
+static void indic__format_duration(char *buf, size_t buf_size, double seconds) {
+    unsigned long long total;
+    if (seconds != seconds || seconds < 0.0) seconds = 0.0;
+    if (seconds > (double)-1) seconds = (double)-1;
+    total = (unsigned long long)(seconds + 0.5);
+    snprintf(buf, buf_size, "%02llu:%02llu:%02llu",
+             total / 3600ULL, (total / 60ULL) % 60ULL, total % 60ULL);
+}
+
+void indic_progress_reset(void) {
+    indic__progress_active = 0;
+    indic__progress_tick = 0;
+    indic__progress_started_at = 0.0;
+}
+
+void indic_progress_update(const char *label, double fraction) {
+    indic_progress_update_ex(label, fraction, NULL);
+}
+
+void indic_progress_update_ex(const char *label, double fraction,
+                              const indic_progress_options *options) {
+    const char *name = label ? label : "";
+    char elapsed_text[48], eta_text[48], details[128];
+    char *line, *p;
+    size_t bar_size, line_size, name_size;
+    int width = 0, show_elapsed = 1, show_eta = 1;
+    int indeterminate, complete, i, filled;
+    double now, elapsed, eta = 0.0;
+
+    if (options) {
+        width = options->width;
+        show_elapsed = options->show_elapsed != 0;
+        show_eta = options->show_eta != 0;
+    }
+    if (width <= 0) {
+        width = indic_term_width() - 10;
+        if (width > 50) width = 50;
+        if (width < 10) width = 10;
+    }
+    if (fraction != fraction) fraction = 0.0;
+    indeterminate = fraction < 0.0;
+    if (!indeterminate && fraction > 1.0) fraction = 1.0;
+
+    now = indic__now();
+    if (!indic__progress_active) {
+        indic__progress_active = 1;
+        indic__progress_started_at = now;
+    }
+    elapsed = now - indic__progress_started_at;
+    if (elapsed < 0.0) elapsed = 0.0;
+
+    details[0] = '\0';
+    if (show_elapsed) {
+        indic__format_duration(elapsed_text, sizeof elapsed_text, elapsed);
+        snprintf(details + strlen(details), sizeof details - strlen(details),
+                 " | elapsed %s", elapsed_text);
+    }
+    if (!indeterminate && show_eta && fraction > 0.0 && fraction < 1.0) {
+        eta = elapsed * (1.0 - fraction) / fraction;
+        indic__format_duration(eta_text, sizeof eta_text, eta);
+        snprintf(details + strlen(details), sizeof details - strlen(details),
+                 " | eta %s", eta_text);
+    }
+
+    bar_size = indic_progress_str_size(width);
+    name_size = strlen(name);
+    if (!bar_size || name_size > (size_t)-1 - bar_size - strlen(details) - 2)
+        return;
+    line_size = name_size + (name_size ? 1 : 0) + bar_size + strlen(details);
+    line = (char *)malloc(line_size);
+    if (!line) return;
+
+    p = line;
+    if (name_size) {
+        memcpy(p, name, name_size);
+        p += name_size;
+        *p++ = ' ';
+    }
+    if (indeterminate) {
+        *p++ = '[';
+        for (i = 0; i < width; i++) {
+            const char *glyph = i == indic__progress_tick % width
+                ? INDIC__FULL : INDIC__EMPTY;
+            size_t glyph_size = strlen(glyph);
+            memcpy(p, glyph, glyph_size);
+            p += glyph_size;
+        }
+        *p++ = ']';
+        indic__progress_tick++;
+    } else {
+        filled = (int)(fraction * width + 0.5);
+        *p++ = '[';
+        for (i = 0; i < width; i++) {
+            const char *glyph = i < filled ? INDIC__FULL : INDIC__EMPTY;
+            size_t glyph_size = strlen(glyph);
+            memcpy(p, glyph, glyph_size);
+            p += glyph_size;
+        }
+        snprintf(p, line_size - (size_t)(p - line), "] %3d%%",
+                 (int)(fraction * 100.0 + 0.5));
+        p += strlen(p);
+    }
+    memcpy(p, details, strlen(details) + 1);
+
+    complete = !indeterminate && fraction >= 1.0;
+    if (indic__ansi_on) {
+        fprintf(indic__output_stream(), "\r\033[K%s", line);
+        if (complete) fputc('\n', indic__output_stream());
+        fflush(indic__output_stream());
+    } else if (complete) {
+        fprintf(indic__output_stream(), "%s\n", line);
+        fflush(indic__output_stream());
+    }
+    free(line);
+    if (complete) indic_progress_reset();
 }
 
 char indic_spinner_frame(int tick) {
