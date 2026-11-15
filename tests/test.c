@@ -6,7 +6,6 @@ int main(void) {
     char buf[256];
     char too_small[1] = { 'x' };
     size_t exact_size;
-    int spinner_tick;
 
     assert(indic_progress_str(buf, sizeof buf, 0.0, 4) == 0);
     assert(strcmp(buf, "[" INDIC__EMPTY INDIC__EMPTY INDIC__EMPTY INDIC__EMPTY "]   0%") == 0);
@@ -56,12 +55,8 @@ int main(void) {
     assert(strcmp(indic_style(INDIC_RED), "") == 0);
     if (INDIC_ISATTY(stdout)) {
         indic_cursor_hide();
-        assert(indic__cursor_hidden == 1);
         indic_cursor_show();
-        assert(indic__cursor_hidden == 0);
-        spinner_tick = indic__spinner_tick;
         indic_spinner_tick("testing NO_COLOR controls");
-        assert(indic__spinner_tick == spinner_tick + 1);
     }
 
     puts("all tests passed");

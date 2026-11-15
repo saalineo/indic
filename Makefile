@@ -14,7 +14,7 @@ examples: $(EXAMPLE_BINS)
 example-%: examples/%.c indic.h
 	$(CC) -std=c99 $(FLAGS) $< -o $@
 
-test: tests/test.c tests/progress_update.c tests/terminal_config.c tests/force_tty.c tests/force_color.c indic.h
+test: tests/test.c tests/context.c tests/progress_update.c tests/terminal_config.c tests/force_tty.c tests/force_color.c indic.h
 	$(CC) -std=c99 $(FLAGS) tests/test.c -o test_c
 	$(CXX) -x c++ $(FLAGS) tests/test.c -o test_cpp
 	$(CC) -std=c99 $(FLAGS) tests/multifile_main.c tests/multifile_worker.c -o test_multifile_c
@@ -27,6 +27,7 @@ test: tests/test.c tests/progress_update.c tests/terminal_config.c tests/force_t
 	$(CXX) -x c++ $(FLAGS) tests/force_color.c -o test_force_color_cpp
 	$(CC) -std=c99 $(FLAGS) tests/progress_update.c -o test_progress_update_c
 	$(CXX) -x c++ $(FLAGS) tests/progress_update.c -o test_progress_update_cpp
+	$(CC) -std=c99 $(FLAGS) -pthread tests/context.c -o test_context_c
 	./test_c
 	./test_cpp
 	./test_multifile_c
@@ -39,6 +40,7 @@ test: tests/test.c tests/progress_update.c tests/terminal_config.c tests/force_t
 	./test_force_color_cpp
 	./test_progress_update_c
 	./test_progress_update_cpp
+	./test_context_c
 
 WINCC  ?= x86_64-w64-mingw32-gcc
 WINCXX ?= x86_64-w64-mingw32-g++
@@ -51,6 +53,6 @@ win:
 	$(WINCXX) -x c++ $(FLAGS) tests/multifile_main.c tests/multifile_worker.c -o test_multifile_cpp.exe
 
 clean:
-	rm -f demo $(EXAMPLE_BINS) test_c test_cpp test_multifile_c test_multifile_cpp test_terminal_config_c test_terminal_config_cpp test_force_tty_c test_force_tty_cpp test_force_color_c test_force_color_cpp test_progress_update_c test_progress_update_cpp demo.exe test.exe test_cpp.exe test_multifile.exe test_multifile_cpp.exe
+	rm -f demo $(EXAMPLE_BINS) test_c test_cpp test_multifile_c test_multifile_cpp test_terminal_config_c test_terminal_config_cpp test_force_tty_c test_force_tty_cpp test_force_color_c test_force_color_cpp test_progress_update_c test_progress_update_cpp test_context_c demo.exe test.exe test_cpp.exe test_multifile.exe test_multifile_cpp.exe
 
 .PHONY: all examples test win clean

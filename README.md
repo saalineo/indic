@@ -120,7 +120,53 @@ options.show_eta = 0;
 indic_progress_update_ex("Uploading", 0.42, &options);
 ```
 
-## Terminal configuration
+## Contexts, streams, and threads
+
+The original functions use one process-wide default context and remain fully
+supported.  Create a context when a component needs its own stream or its own
+spinner/progress state:
+
+```c
+FILE *log = fopen("worker.log", "w");
+indic_context *worker = indic_context_create(log);
+
+if (worker == NULL) {
+    fclose(log);
+    return 1;
+}
+indic_context_init(worker); /* returns 1 only when ANSI controls are usable */
+
+indic_context_spinner_tick(worker, "fetching");
+indic_context_progress_update(worker, "fetching", 0.5);
+indic_context_spinner_done(worker, "fetched");
+indic_context_destroy(worker);
+fclose(log);
+```
+
+```c
+indic_context *indic_context_create(FILE *output);
+void indic_context_destroy(indic_context *context);
+int indic_context_set_output(indic_context *context, FILE *output);
+int indic_context_init(indic_context *context);
+```
+
+`indic_context_create()` requires an open stream.  `indic_context_set_output()`
+can replace it only before initialization.  A context keeps an independent
+spinner frame counter and rich-progress timer, so two contexts do not affect
+each other's animation state.  Use the corresponding `indic_context_*`
+functions for cursor, terminal-width, progress, and spinner operations.
+
+Calls sharing one context are thread-safe.  Indic also serializes each complete
+terminal write across contexts, including contexts that target the same stream.
+This prevents garbled escape sequences, but it is not a multi-line terminal
+layout manager: two live spinners on one terminal still redraw the same line.
+Give independently visible spinners separate streams/terminals, or manage
+their line layout in the application.  Do not destroy a context until all
+threads using it have stopped.  Existing direct writes such as `fprintf()` are
+outside Indic's lock and should be synchronized by the application if they
+share the stream.
+
+## Default terminal configuration
 
 Output defaults to `stdout`. Select another live stream before initialization:
 
