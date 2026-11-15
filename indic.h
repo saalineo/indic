@@ -11,7 +11,9 @@
  *     printf(INDIC_PAINT(INDIC_GREEN, "ok\n"));
  *
  * Options (define before including):
- *     INDIC_ASCII   use '#' and '-' instead of block characters
+ *     INDIC_ASCII        use '#' and '-' instead of block characters
+ *     INDIC_FORCE_TTY    assume the selected output accepts ANSI controls
+ *     INDIC_FORCE_COLOR  emit styles even when ANSI controls are unavailable
  *
  * License: GPL-3.0-or-later (see LICENSE)
  */
@@ -60,6 +62,7 @@ extern "C" {
 #define INDIC_WHITE    "\033[37m"
 
 #define INDIC_PAINT(style, text) style text INDIC_RESET
+int indic_set_output(FILE *output);
 int indic_init(void);
 const char *indic_style(const char *s);
 void indic_cursor_hide(void);
@@ -119,15 +122,23 @@ static volatile sig_atomic_t indic__color_on = 0;
 static volatile sig_atomic_t indic__cursor_hidden = 0;
 static int indic__inited = 0;
 static int indic__spinner_tick = 0;
+static FILE *indic__output = NULL;
+#ifndef _WIN32
+static int indic__output_fd = -1;
+#endif
+
+static FILE *indic__output_stream(void) {
+    return indic__output ? indic__output : stdout;
+}
 
 static void indic__cleanup(void) {
     if (indic__ansi_on) {
         if (indic__cursor_hidden) {
-            fputs("\033[?25h", stdout);
+            fputs("\033[?25h", indic__output_stream());
             indic__cursor_hidden = 0;
         }
-        if (indic__color_on) fputs(INDIC_RESET, stdout);
-        fflush(stdout);
+        if (indic__color_on) fputs(INDIC_RESET, indic__output_stream());
+        fflush(indic__output_stream());
     }
 }
 
@@ -135,46 +146,78 @@ static void indic__cleanup(void) {
 /* A signal handler may not call stdio, malloc, atexit cleanup, or signal().
  * write(2) and _exit(2) are async-signal-safe on POSIX. */
 static void indic__on_sigint(int sig) {
-    if (indic__cursor_hidden) (void)write(STDOUT_FILENO, "\033[?25h", 6);
-    if (indic__color_on) (void)write(STDOUT_FILENO, INDIC_RESET, 4);
+    if (indic__output_fd >= 0 && indic__cursor_hidden)
+        (void)write(indic__output_fd, "\033[?25h", 6);
+    if (indic__output_fd >= 0 && indic__color_on)
+        (void)write(indic__output_fd, INDIC_RESET, 4);
     _exit(128 + sig);
 }
 #endif
 
+int indic_set_output(FILE *output) {
+    if (!output || indic__inited) return -1;
+    indic__output = output;
+    return 0;
+}
+
 void indic_cursor_hide(void) {
     if (!indic__ansi_on) return;
-    fputs("\033[?25l", stdout);
-    fflush(stdout);
+    fputs("\033[?25l", indic__output_stream());
+    fflush(indic__output_stream());
     indic__cursor_hidden = 1;
 }
 
 void indic_cursor_show(void) {
     if (!indic__ansi_on) return;
-    fputs("\033[?25h", stdout);
-    fflush(stdout);
+    fputs("\033[?25h", indic__output_stream());
+    fflush(indic__output_stream());
     indic__cursor_hidden = 0;
 }
 
 int indic_init(void) {
+    FILE *output;
+    const char *term;
+    int terminal = 0;
+#ifdef INDIC_FORCE_TTY
+    const int force_tty = 1;
+#else
+    const int force_tty = 0;
+#endif
+#ifdef INDIC_FORCE_COLOR
+    const int force_color = 1;
+#else
+    const int force_color = 0;
+#endif
+
     if (indic__inited) return indic__ansi_on;
     indic__inited = 1;
+    output = indic__output_stream();
+    term = getenv("TERM");
 
-    if (!INDIC_ISATTY(stdout)) return 0;
+    if ((force_tty || INDIC_ISATTY(output)) &&
+        (force_tty || !term || strcmp(term, "dumb") != 0))
+        terminal = 1;
 #ifdef _WIN32
-    {
-        HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (terminal) {
+        HANDLE h = (HANDLE)_get_osfhandle(_fileno(output));
         DWORD mode = 0;
-        if (h == INVALID_HANDLE_VALUE || !GetConsoleMode(h, &mode)) return 0;
-        if (!SetConsoleMode(h, mode | 0x0004 /* VIRTUAL_TERMINAL_PROCESSING */))
-            return 0;
-        SetConsoleOutputCP(65001); /* UTF-8 */
+        if (h == INVALID_HANDLE_VALUE || !GetConsoleMode(h, &mode) ||
+            !SetConsoleMode(h, mode | 0x0004 /* VIRTUAL_TERMINAL_PROCESSING */)) {
+            if (!force_tty) terminal = 0;
+        } else {
+            SetConsoleOutputCP(65001); /* UTF-8 */
+        }
     }
 #endif
-    indic__ansi_on = 1;
-    indic__color_on = getenv("NO_COLOR") == NULL;
+    indic__ansi_on = terminal;
+    indic__color_on = !getenv("NO_COLOR") && (terminal || force_color);
+    if (!indic__ansi_on) return 0;
+#ifndef _WIN32
+    indic__output_fd = fileno(output);
+#endif
     atexit(indic__cleanup);
 #ifndef _WIN32
-    signal(SIGINT, indic__on_sigint);
+    if (indic__output_fd >= 0) signal(SIGINT, indic__on_sigint);
 #endif
     return 1;
 }
@@ -186,11 +229,12 @@ const char *indic_style(const char *s) {
 int indic_term_width(void) {
 #ifdef _WIN32
     CONSOLE_SCREEN_BUFFER_INFO i;
-    if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &i))
+    HANDLE h = (HANDLE)_get_osfhandle(_fileno(indic__output_stream()));
+    if (h != INVALID_HANDLE_VALUE && GetConsoleScreenBufferInfo(h, &i))
         return i.srWindow.Right - i.srWindow.Left + 1;
 #else
     struct winsize w;
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &w) == 0 && w.ws_col > 0)
+    if (ioctl(fileno(indic__output_stream()), TIOCGWINSZ, &w) == 0 && w.ws_col > 0)
         return w.ws_col;
 #endif
     return 80;
@@ -250,11 +294,11 @@ void indic_progress(double frac, int width) {
         return;
     }
     if (indic__ansi_on) {
-        printf("\r\033[K%s", buf);
-        fflush(stdout);
-        if (frac >= 1.0) putchar('\n');
+        fprintf(indic__output_stream(), "\r\033[K%s", buf);
+        fflush(indic__output_stream());
+        if (frac >= 1.0) fputc('\n', indic__output_stream());
     } else if (frac >= 1.0) {
-        printf("%s\n", buf);
+        fprintf(indic__output_stream(), "%s\n", buf);
     }
     free(buf);
 }
@@ -266,17 +310,18 @@ char indic_spinner_frame(int tick) {
 
 void indic_spinner_tick(const char *msg) {
     if (!indic__ansi_on) return;
-    printf("\r\033[K%c %s", indic_spinner_frame(indic__spinner_tick++), msg);
-    fflush(stdout);
+    fprintf(indic__output_stream(), "\r\033[K%c %s",
+            indic_spinner_frame(indic__spinner_tick++), msg);
+    fflush(indic__output_stream());
 }
 
 void indic_spinner_done(const char *msg) {
     if (indic__ansi_on)
-        printf("\r\033[K%s\xE2\x9C\x94%s %s\n",
+        fprintf(indic__output_stream(), "\r\033[K%s\xE2\x9C\x94%s %s\n",
                indic_style(INDIC_GREEN), indic_style(INDIC_RESET), msg);
     else
-        printf("done: %s\n", msg);
-    fflush(stdout);
+        fprintf(indic__output_stream(), "done: %s\n", msg);
+    fflush(indic__output_stream());
 }
 
 #ifdef __cplusplus

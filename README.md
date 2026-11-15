@@ -45,12 +45,13 @@ will correctly report duplicate library symbols. Defining it nowhere produces
 undefined-symbol linker errors. This replaces the old header-local `static`
 state, which gave every translation unit a different copy.
 
-Styling is disabled automatically when standard output is not a terminal or
-when `NO_COLOR` is set. `NO_COLOR` affects only SGR styling: on an ANSI-capable
-terminal, progress-bar redraws, spinner animation, and cursor hide/show remain
-available. The cursor and any active terminal styling are restored at exit and
-after Ctrl+C on POSIX. The Ctrl+C path uses only async-signal-safe terminal
-writes; Windows relies on normal-exit cleanup.
+Terminal controls are disabled automatically when the selected output is not a
+terminal or when `TERM=dumb`. Styling follows the same rules, and is also
+disabled when `NO_COLOR` is set. `NO_COLOR` affects only SGR styling: on an
+ANSI-capable terminal, progress-bar redraws, spinner animation, and cursor
+hide/show remain available. The cursor and any active terminal styling are
+restored at exit and after Ctrl+C on POSIX. The Ctrl+C path uses only
+async-signal-safe terminal writes; Windows relies on normal-exit cleanup.
 
 `INDIC_PAINT(INDIC_RED, "text")` always emits ANSI escapes. When output may be
 piped, use `indic_style(INDIC_RED)` with `%s` instead. Available styles are
@@ -90,6 +91,27 @@ success and `-1` for an invalid or undersized buffer.
 
 Define `INDIC_ASCII` before including the header to use `#` and `-` instead of
 Unicode block characters.
+
+## Terminal configuration
+
+Output defaults to `stdout`. Select another live stream before initialization:
+
+```c
+if (indic_set_output(stderr) != 0) {
+    /* output is invalid, or indic_init() has already run */
+}
+indic_init();
+```
+
+The selected stream must remain open until program exit. Define either option
+before including `indic.h` when automatic detection is unsuitable:
+
+| Option | Effect |
+| --- | --- |
+| `INDIC_FORCE_TTY` | Assumes the selected output accepts ANSI controls, bypassing both `isatty()` and `TERM=dumb`. |
+| `INDIC_FORCE_COLOR` | Emits SGR styles even without ANSI terminal controls; it does not enable redraws or cursor control. |
+
+`NO_COLOR` always disables styles, including when `INDIC_FORCE_COLOR` is set.
 
 ## Spinner and cursor API
 
