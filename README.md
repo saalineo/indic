@@ -49,7 +49,8 @@ Styling is disabled automatically when standard output is not a terminal or
 when `NO_COLOR` is set. `NO_COLOR` affects only SGR styling: on an ANSI-capable
 terminal, progress-bar redraws, spinner animation, and cursor hide/show remain
 available. The cursor and any active terminal styling are restored at exit and
-after Ctrl+C.
+after Ctrl+C on POSIX. The Ctrl+C path uses only async-signal-safe terminal
+writes; Windows relies on normal-exit cleanup.
 
 `INDIC_PAINT(INDIC_RED, "text")` always emits ANSI escapes. When output may be
 piped, use `indic_style(INDIC_RED)` with `%s` instead. Available styles are

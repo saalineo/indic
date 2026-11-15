@@ -115,8 +115,8 @@ extern "C" {
 #endif
 
 static int indic__ansi_on = 0;
-static int indic__color_on = 0;
-static int indic__cursor_hidden = 0;
+static volatile sig_atomic_t indic__color_on = 0;
+static volatile sig_atomic_t indic__cursor_hidden = 0;
 static int indic__inited = 0;
 static int indic__spinner_tick = 0;
 
@@ -131,11 +131,15 @@ static void indic__cleanup(void) {
     }
 }
 
+#ifndef _WIN32
+/* A signal handler may not call stdio, malloc, atexit cleanup, or signal().
+ * write(2) and _exit(2) are async-signal-safe on POSIX. */
 static void indic__on_sigint(int sig) {
-    indic__cleanup();
-    signal(sig, SIG_DFL);
-    raise(sig);
+    if (indic__cursor_hidden) (void)write(STDOUT_FILENO, "\033[?25h", 6);
+    if (indic__color_on) (void)write(STDOUT_FILENO, INDIC_RESET, 4);
+    _exit(128 + sig);
 }
+#endif
 
 void indic_cursor_hide(void) {
     if (!indic__ansi_on) return;
@@ -169,7 +173,9 @@ int indic_init(void) {
     indic__ansi_on = 1;
     indic__color_on = getenv("NO_COLOR") == NULL;
     atexit(indic__cleanup);
+#ifndef _WIN32
     signal(SIGINT, indic__on_sigint);
+#endif
     return 1;
 }
 
