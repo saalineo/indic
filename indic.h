@@ -60,8 +60,6 @@ extern "C" {
 #define INDIC_WHITE    "\033[37m"
 
 #define INDIC_PAINT(style, text) style text INDIC_RESET
-
-/* Returns 1 if ANSI output is enabled, 0 otherwise */
 int indic_init(void);
 const char *indic_style(const char *s);
 void indic_cursor_hide(void);
@@ -116,16 +114,19 @@ void indic_spinner_done(const char *msg);
 extern "C" {
 #endif
 
-/* Shared library state: it exists once because this block is compiled once. */
+static int indic__ansi_on = 0;
 static int indic__color_on = 0;
 static int indic__cursor_hidden = 0;
 static int indic__inited = 0;
 static int indic__spinner_tick = 0;
 
 static void indic__cleanup(void) {
-    if (indic__color_on) {
-        if (indic__cursor_hidden) fputs("\033[?25h", stdout);
-        fputs(INDIC_RESET, stdout);
+    if (indic__ansi_on) {
+        if (indic__cursor_hidden) {
+            fputs("\033[?25h", stdout);
+            indic__cursor_hidden = 0;
+        }
+        if (indic__color_on) fputs(INDIC_RESET, stdout);
         fflush(stdout);
     }
 }
@@ -137,24 +138,24 @@ static void indic__on_sigint(int sig) {
 }
 
 void indic_cursor_hide(void) {
-    if (!indic__color_on) return;
+    if (!indic__ansi_on) return;
     fputs("\033[?25l", stdout);
     fflush(stdout);
     indic__cursor_hidden = 1;
 }
 
 void indic_cursor_show(void) {
-    if (!indic__color_on) return;
+    if (!indic__ansi_on) return;
     fputs("\033[?25h", stdout);
     fflush(stdout);
     indic__cursor_hidden = 0;
 }
 
 int indic_init(void) {
-    if (indic__inited) return indic__color_on;
+    if (indic__inited) return indic__ansi_on;
     indic__inited = 1;
 
-    if (!INDIC_ISATTY(stdout) || getenv("NO_COLOR")) return 0;
+    if (!INDIC_ISATTY(stdout)) return 0;
 #ifdef _WIN32
     {
         HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -165,7 +166,8 @@ int indic_init(void) {
         SetConsoleOutputCP(65001); /* UTF-8 */
     }
 #endif
-    indic__color_on = 1;
+    indic__ansi_on = 1;
+    indic__color_on = getenv("NO_COLOR") == NULL;
     atexit(indic__cleanup);
     signal(SIGINT, indic__on_sigint);
     return 1;
@@ -241,7 +243,7 @@ void indic_progress(double frac, int width) {
         free(buf);
         return;
     }
-    if (indic__color_on) {
+    if (indic__ansi_on) {
         printf("\r\033[K%s", buf);
         fflush(stdout);
         if (frac >= 1.0) putchar('\n');
@@ -257,14 +259,15 @@ char indic_spinner_frame(int tick) {
 }
 
 void indic_spinner_tick(const char *msg) {
-    if (!indic__color_on) return;
+    if (!indic__ansi_on) return;
     printf("\r\033[K%c %s", indic_spinner_frame(indic__spinner_tick++), msg);
     fflush(stdout);
 }
 
 void indic_spinner_done(const char *msg) {
-    if (indic__color_on)
-        printf("\r\033[K" INDIC_GREEN "\xE2\x9C\x94" INDIC_RESET " %s\n", msg);
+    if (indic__ansi_on)
+        printf("\r\033[K%s\xE2\x9C\x94%s %s\n",
+               indic_style(INDIC_GREEN), indic_style(INDIC_RESET), msg);
     else
         printf("done: %s\n", msg);
     fflush(stdout);

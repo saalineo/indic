@@ -45,8 +45,10 @@ will correctly report duplicate library symbols. Defining it nowhere produces
 undefined-symbol linker errors. This replaces the old header-local `static`
 state, which gave every translation unit a different copy.
 
-Colors are disabled automatically when standard output is not a terminal or
-when `NO_COLOR` is set. The cursor and terminal colors are restored at exit and
+Styling is disabled automatically when standard output is not a terminal or
+when `NO_COLOR` is set. `NO_COLOR` affects only SGR styling: on an ANSI-capable
+terminal, progress-bar redraws, spinner animation, and cursor hide/show remain
+available. The cursor and any active terminal styling are restored at exit and
 after Ctrl+C.
 
 `INDIC_PAINT(INDIC_RED, "text")` always emits ANSI escapes. When output may be
