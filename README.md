@@ -6,6 +6,52 @@ and cursor control. It depends only on libc and the platform terminal headers.
 It works on Linux, macOS, and Windows; Windows console ANSI support is enabled
 by `indic_init()`.
 
+## CMake dependency
+
+Indic provides the `indic::indic` CMake target.  To use a tagged GitHub
+release without manually cloning or building Indic, add this to the consuming
+project's `CMakeLists.txt`:
+
+```cmake
+include(FetchContent)
+
+FetchContent_Declare(
+    indic
+    GIT_REPOSITORY https://github.com/saalineo/indic.git
+    GIT_TAG v0.1.0
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(indic)
+
+target_link_libraries(my_app PRIVATE indic::indic)
+```
+
+Then include the public header normally:
+
+```c
+#include <indic.h>
+```
+
+When using the CMake target, do **not** define `INDIC_IMPLEMENTATION`; the
+target supplies the implementation. Pin `GIT_TAG` to a release tag rather
+than a branch for reproducible builds.
+
+For a system or package-manager installation, Indic also supports CMake's
+standard package lookup:
+
+```cmake
+find_package(indic CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE indic::indic)
+```
+
+Build and install it with:
+
+```sh
+cmake -S . -B build
+cmake --build build
+cmake --install build --prefix /your/prefix
+```
+
 ## Usage
 
 Include `indic.h` where it is used. In exactly one translation unit (normally
@@ -227,4 +273,4 @@ all of them with `make examples`, or build one with, for example,
 
 ## License
 
-GNU GPL v3 or later. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

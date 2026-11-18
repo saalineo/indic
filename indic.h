@@ -15,7 +15,7 @@
  *     INDIC_FORCE_TTY    assume the selected output accepts ANSI controls
  *     INDIC_FORCE_COLOR  emit styles even when ANSI controls are unavailable
  *
- * License: GPL-3.0-or-later (see LICENSE)
+ * License: MIT (see LICENSE)
  */
 #ifndef INDIC_H
 #define INDIC_H
