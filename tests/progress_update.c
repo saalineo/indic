@@ -6,11 +6,15 @@
 int main(void) {
     FILE *output = tmpfile();
     char text[4096] = { 0 };
+    char duration[16];
     indic_progress_options options = INDIC_PROGRESS_OPTIONS_INIT;
 
     assert(output != NULL);
     assert(indic_set_output(output) == 0);
     assert(indic_init() == 1);
+
+    indic__format_duration(duration, sizeof duration, 1.0);
+    assert(strcmp(duration, "00:00:01") == 0);
 
     indic_progress_update("Downloading", 0.5);
     indic_progress_update("Waiting", INDIC_PROGRESS_INDETERMINATE);

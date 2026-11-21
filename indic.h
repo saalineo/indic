@@ -480,7 +480,6 @@ void indic_progress(double frac, int width) {
 static void indic__format_duration(char *buf, size_t buf_size, double seconds) {
     unsigned long long total;
     if (seconds != seconds || seconds < 0.0) seconds = 0.0;
-    if (seconds > (double)-1) seconds = (double)-1;
     total = (unsigned long long)(seconds + 0.5);
     snprintf(buf, buf_size, "%02llu:%02llu:%02llu",
              total / 3600ULL, (total / 60ULL) % 60ULL, total % 60ULL);
